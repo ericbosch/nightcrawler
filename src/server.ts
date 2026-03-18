@@ -1,6 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import { DemoInMemoryAuthProvider } from '@modelcontextprotocol/sdk/examples/server/demoInMemoryOAuthProvider.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { getLandscape, searchReposTool } from './tools/landscape.js';
 import { research } from './tools/research.js';
@@ -8,8 +12,8 @@ import { getFreshnessStatus, markSource } from './utils/freshness.js';
 import { getTrends, searchX } from './adapters/x.js';
 import { getSearxngUrl } from './utils/config.js';
 import { execSync } from 'child_process';
-import { createServer } from 'http';
 import { randomUUID } from 'crypto';
+import express from 'express';
 
 // Mark all sources so they appear in freshness status
 ['hackernews', 'github', 'arxiv', 'searxng', 'brave', 'x', 'landscape', 'research'].forEach(markSource);
@@ -114,50 +118,89 @@ async function ensureSearxng() {
 }
 
 async function startHttp(port: number) {
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const PUBLIC_URL = process.env['MCP_PUBLIC_URL'] ?? 'https://elitebook.tail353084.ts.net';
+  const issuerUrl = new URL(PUBLIC_URL);
+  const mcpServerUrl = new URL(`${PUBLIC_URL}/mcp`);
 
-  const httpServer = createServer(async (req, res) => {
-    // CORS — needed for browser-based clients (Claude.ai, etc.)
+  const authProvider = new DemoInMemoryAuthProvider();
+
+  const app = express();
+  app.use(express.json());
+
+  // CORS — needed for browser-based clients (Claude.ai, etc.)
+  app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, Accept, Authorization');
     res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
-    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
-
+    if (req.method === 'OPTIONS') { res.status(204).end(); return; }
     console.error(`${req.method} ${req.url} session=${req.headers['mcp-session-id'] ?? 'none'}`);
+    next();
+  });
 
-    if (req.url !== '/mcp') { res.writeHead(404).end(); return; }
+  // OAuth endpoints: /.well-known/*, /authorize, /token, /register, /revoke
+  app.use(mcpAuthRouter({
+    provider: authProvider,
+    issuerUrl,
+    scopesSupported: ['mcp:tools'],
+    resourceName: 'nightcrawler',
+  }));
 
+  const bearerAuth = requireBearerAuth({
+    verifier: authProvider,
+    resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpServerUrl),
+  });
+
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+
+  const mcpHandler = async (req: express.Request, res: express.Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    let transport = sessionId ? sessions.get(sessionId) : undefined;
 
-    if (!transport) {
-      // Session not found (new client or post-restart). Recreate with the same session ID
-      // so the proxy doesn't need to reinitialize — force _initialized to bypass handshake.
-      const fixedId = sessionId ?? randomUUID();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t = new StreamableHTTPServerTransport({ sessionIdGenerator: () => fixedId } as any);
-      const srv = createMcpServer();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await srv.connect(t as any);
-      // Bypass SDK init check so stale-session clients work without reinitializing
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const wst = (t as any)._webStandardTransport;
-      if (wst) {
-        wst._initialized = true;
-        wst.sessionId = fixedId;
+    if (sessionId) {
+      const transport = sessions.get(sessionId);
+      if (!transport) {
+        res.status(404).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Session not found' }, id: null });
+        return;
       }
-      sessions.set(fixedId, t);
-      t.onclose = () => sessions.delete(fixedId);
-      transport = t;
+      await transport.handleRequest(req, res, req.body);
+      return;
     }
 
+    // No session ID — must be an initialize request
+    if (!isInitializeRequest(req.body)) {
+      res.status(400).json({ jsonrpc: '2.0', error: { code: -32000, message: 'No session ID — send initialize first' }, id: null });
+      return;
+    }
+
+    const t = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (id) => { sessions.set(id, t); },
+    });
+    t.onclose = () => { if (t.sessionId) sessions.delete(t.sessionId); };
+
+    const srv = createMcpServer();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await srv.connect(t as any);
+    await t.handleRequest(req, res, req.body);
+  };
+
+  app.post('/mcp', bearerAuth, mcpHandler);
+  app.get('/mcp', bearerAuth, async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    const transport = sessionId ? sessions.get(sessionId) : undefined;
+    if (!transport) { res.status(404).send('Session not found'); return; }
+    await transport.handleRequest(req, res);
+  });
+  app.delete('/mcp', bearerAuth, async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    const transport = sessionId ? sessions.get(sessionId) : undefined;
+    if (!transport) { res.status(404).send('Session not found'); return; }
     await transport.handleRequest(req, res);
   });
 
   const host = process.env['MCP_HOST'] ?? '127.0.0.1';
-  httpServer.listen(port, host, () => {
-    console.error(`nightcrawler HTTP MCP listening on :${port}/mcp`);
+  app.listen(port, host, () => {
+    console.error(`nightcrawler HTTP MCP listening on ${host}:${port}/mcp (OAuth enabled)`);
   });
 }
 
