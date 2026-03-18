@@ -41,41 +41,37 @@ async function launchBrowser() {
   return browser;
 }
 
+async function loadSessionIntoContext(page: import('playwright-core').Page): Promise<boolean> {
+  const saved = loadSession() as import('playwright-core').Cookie[];
+  if (saved.length === 0) return false;
+  await page.context().addCookies(saved);
+  // Check auth_token cookie presence — no navigation needed
+  return saved.some(c => c.name === 'auth_token');
+}
+
 async function ensureLoggedIn(page: import('playwright-core').Page): Promise<boolean> {
+  // Try saved session first — load cookies without navigating to /home
+  const hasSession = await loadSessionIntoContext(page);
+  if (hasSession) return true;
+
+  // Fall back to credential login
   const username = getSecret('X_USERNAME');
   const password = getSecret('X_PASSWORD');
   if (!username || !password) return false;
 
-  // Load saved session cookies
-  const saved = loadSession() as import('playwright-core').Cookie[];
-  if (saved.length > 0) {
-    await page.context().addCookies(saved);
-  }
-
-  // Check if already logged in
-  await page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-  const url = page.url();
-  if (url.includes('/home') && !url.includes('/login')) {
-    return true;
-  }
-
-  // Login flow
   await page.goto('https://x.com/i/flow/login', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
   await page.waitForTimeout(2000);
 
-  // Enter username
   const userInput = page.locator('input[autocomplete="username"]').first();
   await userInput.fill(username);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(1500);
 
-  // Enter password
   const passInput = page.locator('input[name="password"]').first();
   await passInput.fill(password);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3000);
 
-  // Save session
   const cookies = await page.context().cookies();
   if (cookies.length > 0) saveSession(cookies);
 
@@ -83,8 +79,9 @@ async function ensureLoggedIn(page: import('playwright-core').Page): Promise<boo
 }
 
 export async function getTrends(geo?: string): Promise<Trend[]> {
-  const username = getSecret('X_USERNAME');
-  if (!username) return [];
+  const hasSession = existsSync(SESSION_PATH);
+  const hasCredentials = !!(getSecret('X_USERNAME') && getSecret('X_PASSWORD'));
+  if (!hasSession && !hasCredentials) return [];
 
   const browser = await launchBrowser();
   try {
@@ -96,32 +93,36 @@ export async function getTrends(geo?: string): Promise<Trend[]> {
     const loggedIn = await ensureLoggedIn(page);
     if (!loggedIn) return [];
 
-    // Navigate to trending — use explore page
-    await page.goto('https://x.com/explore/tabs/trending', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-    await page.waitForTimeout(2000);
+    // Navigate to trending — use networkidle so JS renders the feed
+    await page.goto('https://x.com/explore/tabs/trending', { waitUntil: 'networkidle', timeout: TIMEOUT }).catch(() => {});
+    await page.waitForSelector('[data-testid="trend"]', { timeout: 8000 }).catch(() => {});
 
     // Extract trending items
     const trends = await page.evaluate(() => {
-      const items: Array<{ topic: string; volume: number | null }> = [];
-      const cells = document.querySelectorAll('[data-testid="trend"]');
-      cells.forEach((cell: Element) => {
-        const topicEl = cell.querySelector('[dir="ltr"] span');
-        const volumeEl = cell.querySelector('[dir="ltr"] ~ span');
-        if (topicEl?.textContent) {
-          const volumeText = volumeEl?.textContent ?? '';
-          const volumeMatch = volumeText.match(/([\d,.]+)K?/);
-          const volume = volumeMatch?.[1] != null
-            ? parseFloat(volumeMatch[1].replace(',', '')) * (volumeText.includes('K') ? 1000 : 1)
-            : null;
-          items.push({ topic: topicEl.textContent.trim(), volume });
-        }
+      const items: Array<{ topic: string; volume: number | null; category: string }> = [];
+      document.querySelectorAll('[data-testid="trend"]').forEach((cell: Element) => {
+        // Spans: ["rank", "·", "Category · Trending", "TopicName", ...]
+        const spans = Array.from(cell.querySelectorAll('span'))
+          .map((s: Element) => s.textContent?.trim() ?? '')
+          .filter(t => t.length > 0);
+        // Topic is typically the last unique meaningful span (not rank, not "·", not category descriptor)
+        const topic = spans.filter(s => !s.match(/^\d+$/) && s !== '·' && !s.includes('Trending') && !s.includes('posts')).at(-1) ?? '';
+        const category = spans.find(s => s.includes('Trending') || s.includes('·')) ?? '';
+        const volumeSpan = spans.find(s => s.match(/[\d,.]+K?\s*posts?/i)) ?? '';
+        const volumeMatch = volumeSpan.match(/([\d,.]+)(K)?/);
+        const volume = volumeMatch?.[1] != null
+          ? parseFloat(volumeMatch[1].replace(',', '')) * (volumeMatch[2] ? 1000 : 1)
+          : null;
+        if (topic) items.push({ topic, volume, category });
       });
       return items;
     });
 
     return trends.map(t => {
-      const base = { ...fresh('x'), topic: t.topic, geo: geo ?? 'global' };
-      return t.volume !== null ? { ...base, volume: t.volume } : base;
+      const base = { ...fresh('x'), topic: t.topic, geo: geo ?? 'global', score: undefined as number | undefined };
+      if (t.volume !== null) base.score = t.volume;
+      const { score, ...rest } = base;
+      return score !== undefined ? { ...rest, score } : rest;
     });
   } catch {
     return [];
@@ -131,8 +132,9 @@ export async function getTrends(geo?: string): Promise<Trend[]> {
 }
 
 export async function searchX(query: string, minLikes = 0, lang?: string): Promise<Post[]> {
-  const username = getSecret('X_USERNAME');
-  if (!username) return [];
+  const hasSession = existsSync(SESSION_PATH);
+  const hasCredentials = !!(getSecret('X_USERNAME') && getSecret('X_PASSWORD'));
+  if (!hasSession && !hasCredentials) return [];
 
   const browser = await launchBrowser();
   try {
@@ -150,8 +152,8 @@ export async function searchX(query: string, minLikes = 0, lang?: string): Promi
     if (minLikes > 0) q += ` min_faves:${minLikes}`;
     const searchUrl = `https://x.com/search?q=${encodeURIComponent(q)}&f=live`;
 
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-    await page.waitForTimeout(2500);
+    await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: TIMEOUT }).catch(() => {});
+    await page.waitForSelector('[data-testid="tweet"]', { timeout: 8000 }).catch(() => {});
 
     const posts = await page.evaluate(() => {
       const results: Array<{
