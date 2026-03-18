@@ -9,93 +9,95 @@ import { getTrends, searchX } from './adapters/x.js';
 import { getSearxngUrl } from './utils/config.js';
 import { execSync } from 'child_process';
 import { createServer } from 'http';
-
-const server = new McpServer({
-  name: 'nightcrawler',
-  version: '1.0.0',
-});
+import { randomUUID } from 'crypto';
 
 // Mark all sources so they appear in freshness status
 ['hackernews', 'github', 'arxiv', 'searxng', 'brave', 'x', 'landscape', 'research'].forEach(markSource);
 
-// --- Capa 2: Landscape técnico ---
+function createMcpServer(): McpServer {
+  const srv = new McpServer({ name: 'nightcrawler', version: '1.0.0' });
 
-server.tool(
-  'get_landscape',
-  'Get technical landscape for a topic: GitHub repos, Hacker News stories, arXiv papers',
-  { topic: z.string().describe('Topic to research') },
-  async ({ topic }) => {
-    const result = await getLandscape(topic);
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  }
-);
+  // --- Capa 2: Landscape técnico ---
 
-server.tool(
-  'search_repos',
-  'Search GitHub repositories ranked by recent activity',
-  { query: z.string().describe('Search query') },
-  async ({ query }) => {
-    const result = await searchReposTool(query);
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  }
-);
-
-// --- Capa 3: Síntesis ---
-
-server.tool(
-  'research',
-  'Unified research report combining landscape + web search. depth=quick (landscape only) or deep (adds web search)',
-  {
-    topic: z.string().describe('Topic to research'),
-    depth: z.enum(['quick', 'deep']).default('quick').describe('quick=landscape only, deep=adds web search'),
-  },
-  async ({ topic, depth }) => {
-    const result = await research(topic, depth);
-    return { content: [{ type: 'text', text: result.summary }] };
-  }
-);
-
-server.tool(
-  'get_freshness',
-  'Get last update timestamps for all data sources',
-  {},
-  async () => {
-    const result = getFreshnessStatus();
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  }
-);
-
-// --- Capa 1: X/Twitter (Fase 3 — Playwright) ---
-
-server.tool(
-  'get_trends',
-  'Get trending topics from X/Twitter. Requires X_USERNAME and X_PASSWORD in environment.',
-  { geo: z.string().optional().describe('Geographic region hint (e.g. "ES", "US") — informational only') },
-  async ({ geo }) => {
-    const result = await getTrends(geo);
-    if (result.length === 0) {
-      return { content: [{ type: 'text', text: 'X/Twitter trends unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+  srv.tool(
+    'get_landscape',
+    'Get technical landscape for a topic: GitHub repos, Hacker News stories, arXiv papers',
+    { topic: z.string().describe('Topic to research') },
+    async ({ topic }) => {
+      const result = await getLandscape(topic);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  }
-);
+  );
 
-server.tool(
-  'search_x',
-  'Search X/Twitter posts via Playwright. Requires X_USERNAME and X_PASSWORD in environment.',
-  {
-    query: z.string().describe('Search query'),
-    min_likes: z.number().optional().describe('Minimum likes filter'),
-    lang: z.string().optional().describe('Language filter (e.g. "en", "es")'),
-  },
-  async ({ query, min_likes, lang }) => {
-    const result = await searchX(query, min_likes ?? 0, lang);
-    if (result.length === 0) {
-      return { content: [{ type: 'text', text: 'X/Twitter search unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+  srv.tool(
+    'search_repos',
+    'Search GitHub repositories ranked by recent activity',
+    { query: z.string().describe('Search query') },
+    async ({ query }) => {
+      const result = await searchReposTool(query);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  }
-);
+  );
+
+  // --- Capa 3: Síntesis ---
+
+  srv.tool(
+    'research',
+    'Unified research report combining landscape + web search. depth=quick (landscape only) or deep (adds web search)',
+    {
+      topic: z.string().describe('Topic to research'),
+      depth: z.enum(['quick', 'deep']).default('quick').describe('quick=landscape only, deep=adds web search'),
+    },
+    async ({ topic, depth }) => {
+      const result = await research(topic, depth);
+      return { content: [{ type: 'text', text: result.summary }] };
+    }
+  );
+
+  srv.tool(
+    'get_freshness',
+    'Get last update timestamps for all data sources',
+    {},
+    async () => {
+      const result = getFreshnessStatus();
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  // --- Capa 1: X/Twitter (Fase 3 — Playwright) ---
+
+  srv.tool(
+    'get_trends',
+    'Get trending topics from X/Twitter. Requires X_USERNAME and X_PASSWORD in environment.',
+    { geo: z.string().optional().describe('Geographic region hint (e.g. "ES", "US") — informational only') },
+    async ({ geo }) => {
+      const result = await getTrends(geo);
+      if (result.length === 0) {
+        return { content: [{ type: 'text', text: 'X/Twitter trends unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  srv.tool(
+    'search_x',
+    'Search X/Twitter posts via Playwright. Requires X_USERNAME and X_PASSWORD in environment.',
+    {
+      query: z.string().describe('Search query'),
+      min_likes: z.number().optional().describe('Minimum likes filter'),
+      lang: z.string().optional().describe('Language filter (e.g. "en", "es")'),
+    },
+    async ({ query, min_likes, lang }) => {
+      const result = await searchX(query, min_likes ?? 0, lang);
+      if (result.length === 0) {
+        return { content: [{ type: 'text', text: 'X/Twitter search unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  return srv;
+}
 
 async function ensureSearxng() {
   try {
@@ -112,15 +114,34 @@ async function ensureSearxng() {
 }
 
 async function startHttp(port: number) {
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+
   const httpServer = createServer(async (req, res) => {
     if (req.url !== '/mcp') { res.writeHead(404).end(); return; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transport = new StreamableHTTPServerTransport({} as any);
-    res.on('close', () => { transport.close().catch(() => {}); });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await server.connect(transport as any);
+
+    const sessionId = (req.headers['mcp-session-id'] as string | undefined) ?? '';
+    let transport = sessions.get(sessionId);
+
+    if (!transport) {
+      // New session — fresh McpServer + transport per client
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() } as any);
+      const srv = createMcpServer();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await srv.connect(t as any);
+      transport = t;
+    }
+
     await transport.handleRequest(req, res);
+
+    // Store session AFTER handleRequest sets the session ID
+    const sid = (transport as unknown as { sessionId?: string }).sessionId;
+    if (sid && !sessions.has(sid)) {
+      sessions.set(sid, transport);
+      transport.onclose = () => sessions.delete(sid);
+    }
   });
+
   const host = process.env['MCP_HOST'] ?? '127.0.0.1';
   httpServer.listen(port, host, () => {
     console.error(`nightcrawler HTTP MCP listening on :${port}/mcp`);
@@ -137,7 +158,8 @@ async function main() {
     await startHttp(httpPort);
   } else {
     const transport = new StdioServerTransport();
-    await server.connect(transport);
+    const srv = createMcpServer();
+    await srv.connect(transport);
   }
 }
 
