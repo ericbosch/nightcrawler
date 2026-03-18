@@ -125,6 +125,7 @@ async function startHttp(port: number) {
   const authProvider = new DemoInMemoryAuthProvider();
 
   const app = express();
+  app.set('trust proxy', 1); // Tailscale Funnel adds X-Forwarded-For
   app.use(express.json());
 
   // CORS — needed for browser-based clients (Claude.ai, etc.)
