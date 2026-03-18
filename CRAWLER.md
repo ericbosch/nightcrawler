@@ -11,7 +11,7 @@ Arquitectura completa: https://www.notion.so/326337d15dbd8107a6f0de3468cdfe6c
 | 2 | Adapters sin X (HN, GitHub, arXiv, SearXNG/Brave) | ✅ |
 | 3 | X/Twitter via Playwright | ✅ |
 | 4 | Web search + síntesis avanzada | ✅ parcial |
-| 5 | Hardening, SSE, systemd | ⏳ pendiente |
+| 5 | Hardening, systemd | ✅ |
 
 ## Tools disponibles
 
@@ -45,6 +45,23 @@ cd ~/dev/nightcrawler/docker && sudo docker compose up -d
 ```
 Puerto: http://localhost:8888 (solo localhost)
 
-## Próximo paso (Fase 5)
+## Operaciones
 
-Hardening: systemd unit para SearXNG y nightcrawler en modo daemon.
+```bash
+# SearXNG
+sudo systemctl start|stop|restart nightcrawler-searxng
+sudo systemctl status nightcrawler-searxng
+
+# Actualizar imagen SearXNG
+sudo systemctl reload nightcrawler-searxng
+
+# Ver logs SearXNG
+sudo docker logs nightcrawler-searxng --tail 50
+```
+
+## Hardening completado (Fase 5)
+
+- `nightcrawler-searxng.service` — arranca en boot, `WantedBy=multi-user.target`
+- sudoers `/etc/sudoers.d/nightcrawler-searxng` — krinekk puede gestionar sin contraseña
+- Auto-heal en `server.ts` — si SearXNG no responde al arrancar nightcrawler, lo levanta
+- Fallback a Brave API si SearXNG no disponible

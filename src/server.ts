@@ -5,6 +5,8 @@ import { getLandscape, searchReposTool } from './tools/landscape.js';
 import { research } from './tools/research.js';
 import { getFreshnessStatus, markSource } from './utils/freshness.js';
 import { getTrends, searchX } from './adapters/x.js';
+import { getSearxngUrl } from './utils/config.js';
+import { execSync } from 'child_process';
 
 const server = new McpServer({
   name: 'nightcrawler',
@@ -93,7 +95,22 @@ server.tool(
   }
 );
 
+async function ensureSearxng() {
+  try {
+    const res = await fetch(`${getSearxngUrl()}/healthz`, { signal: AbortSignal.timeout(2000) });
+    if (res.ok) return;
+  } catch {
+    // not up
+  }
+  try {
+    execSync('sudo systemctl start nightcrawler-searxng', { timeout: 10_000, stdio: 'ignore' });
+  } catch {
+    // best effort — Brave fallback handles the rest
+  }
+}
+
 async function main() {
+  await ensureSearxng();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
