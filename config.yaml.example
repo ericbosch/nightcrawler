@@ -1,0 +1,11 @@
+searxng:
+  url: http://localhost:8888
+
+# github token opcional — aumenta rate limit (también se lee de GITHUB_TOKEN env)
+# github:
+#   token: ghp_...
+
+# credenciales X para Playwright (Fase 3)
+# x:
+#   username: your_username
+#   password: your_password
