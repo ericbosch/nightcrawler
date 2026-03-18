@@ -5,6 +5,26 @@ import yaml from 'js-yaml';
 import type { NightcrawlerConfig } from '../types.js';
 
 const CONFIG_PATH = join(homedir(), '.config', 'nightcrawler', 'config.yaml');
+const SECRETS_PATH = join(homedir(), '.secrets');
+
+function loadSecrets(): Record<string, string> {
+  if (!existsSync(SECRETS_PATH)) return {};
+  try {
+    const out: Record<string, string> = {};
+    for (const line of readFileSync(SECRETS_PATH, 'utf8').split('\n')) {
+      const m = line.match(/^export\s+(\w+)="([^"]*)"$/);
+      if (m?.[1] && m[2] !== undefined) out[m[1]] = m[2];
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+let _secrets: Record<string, string> | null = null;
+function secrets(): Record<string, string> {
+  return (_secrets ??= loadSecrets());
+}
 
 export function loadConfig(): NightcrawlerConfig {
   if (!existsSync(CONFIG_PATH)) return {};
@@ -16,7 +36,7 @@ export function loadConfig(): NightcrawlerConfig {
 }
 
 export function getSecret(key: string): string | undefined {
-  return process.env[key];
+  return process.env[key] ?? secrets()[key];
 }
 
 export function getGithubToken(): string | undefined {

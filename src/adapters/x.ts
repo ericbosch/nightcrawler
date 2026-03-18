@@ -1,6 +1,5 @@
 import type { Post, Trend } from '../types.js';
 import { fresh } from '../utils/freshness.js';
-import { getSecret } from '../utils/config.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -50,38 +49,12 @@ async function loadSessionIntoContext(page: import('playwright-core').Page): Pro
 }
 
 async function ensureLoggedIn(page: import('playwright-core').Page): Promise<boolean> {
-  // Try saved session first — load cookies without navigating to /home
-  const hasSession = await loadSessionIntoContext(page);
-  if (hasSession) return true;
-
-  // Fall back to credential login
-  const username = getSecret('X_USERNAME');
-  const password = getSecret('X_PASSWORD');
-  if (!username || !password) return false;
-
-  await page.goto('https://x.com/i/flow/login', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-  await page.waitForTimeout(2000);
-
-  const userInput = page.locator('input[autocomplete="username"]').first();
-  await userInput.fill(username);
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1500);
-
-  const passInput = page.locator('input[name="password"]').first();
-  await passInput.fill(password);
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(3000);
-
-  const cookies = await page.context().cookies();
-  if (cookies.length > 0) saveSession(cookies);
-
-  return page.url().includes('/home');
+  return loadSessionIntoContext(page);
 }
 
 export async function getTrends(geo?: string): Promise<Trend[]> {
   const hasSession = existsSync(SESSION_PATH);
-  const hasCredentials = !!(getSecret('X_USERNAME') && getSecret('X_PASSWORD'));
-  if (!hasSession && !hasCredentials) return [];
+  if (!hasSession) return [];
 
   const browser = await launchBrowser();
   try {
@@ -133,8 +106,7 @@ export async function getTrends(geo?: string): Promise<Trend[]> {
 
 export async function searchX(query: string, minLikes = 0, lang?: string): Promise<Post[]> {
   const hasSession = existsSync(SESSION_PATH);
-  const hasCredentials = !!(getSecret('X_USERNAME') && getSecret('X_PASSWORD'));
-  if (!hasSession && !hasCredentials) return [];
+  if (!hasSession) return [];
 
   const browser = await launchBrowser();
   try {

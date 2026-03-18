@@ -34,8 +34,7 @@ npm run dev   # tsx directo, sin compilar
 En `~/.secrets`:
 - `GITHUB_TOKEN` — aumenta rate limit GitHub (ya disponible)
 - `BRAVE_API_KEY` — fallback si SearXNG no está activo (ya disponible)
-- `X_USERNAME` — usuario X/Twitter para Playwright (pendiente de añadir)
-- `X_PASSWORD` — contraseña X/Twitter (pendiente de añadir)
+- `X_USERNAME` / `X_PASSWORD` — NO necesarios. X/Twitter usa session file en `~/.config/nightcrawler/x-session.json`. Para renovar: `node scripts/x-login.mjs`.
 
 ## SearXNG
 

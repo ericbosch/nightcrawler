@@ -68,12 +68,12 @@ function createMcpServer(): McpServer {
 
   srv.tool(
     'get_trends',
-    'Get trending topics from X/Twitter. Requires X_USERNAME and X_PASSWORD in environment.',
+    'Get trending topics from X/Twitter. Requires session file at ~/.config/nightcrawler/x-session.json.',
     { geo: z.string().optional().describe('Geographic region hint (e.g. "ES", "US") — informational only') },
     async ({ geo }) => {
       const result = await getTrends(geo);
       if (result.length === 0) {
-        return { content: [{ type: 'text', text: 'X/Twitter trends unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+        return { content: [{ type: 'text', text: 'X/Twitter trends unavailable. Session file missing at ~/.config/nightcrawler/x-session.json — run node scripts/x-login.mjs to generate it.' }] };
       }
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     }
@@ -81,7 +81,7 @@ function createMcpServer(): McpServer {
 
   srv.tool(
     'search_x',
-    'Search X/Twitter posts via Playwright. Requires X_USERNAME and X_PASSWORD in environment.',
+    'Search X/Twitter posts via Playwright. Requires session file at ~/.config/nightcrawler/x-session.json.',
     {
       query: z.string().describe('Search query'),
       min_likes: z.number().optional().describe('Minimum likes filter'),
@@ -90,7 +90,7 @@ function createMcpServer(): McpServer {
     async ({ query, min_likes, lang }) => {
       const result = await searchX(query, min_likes ?? 0, lang);
       if (result.length === 0) {
-        return { content: [{ type: 'text', text: 'X/Twitter search unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+        return { content: [{ type: 'text', text: 'X/Twitter search unavailable. Session file missing at ~/.config/nightcrawler/x-session.json — run node scripts/x-login.mjs to generate it.' }] };
       }
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     }
@@ -117,29 +117,42 @@ async function startHttp(port: number) {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
   const httpServer = createServer(async (req, res) => {
+    // CORS — needed for browser-based clients (Claude.ai, etc.)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, Accept, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
+    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+
+    console.error(`${req.method} ${req.url} session=${req.headers['mcp-session-id'] ?? 'none'}`);
+
     if (req.url !== '/mcp') { res.writeHead(404).end(); return; }
 
-    const sessionId = (req.headers['mcp-session-id'] as string | undefined) ?? '';
-    let transport = sessions.get(sessionId);
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    let transport = sessionId ? sessions.get(sessionId) : undefined;
 
     if (!transport) {
-      // New session — fresh McpServer + transport per client
+      // Session not found (new client or post-restart). Recreate with the same session ID
+      // so the proxy doesn't need to reinitialize — force _initialized to bypass handshake.
+      const fixedId = sessionId ?? randomUUID();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() } as any);
+      const t = new StreamableHTTPServerTransport({ sessionIdGenerator: () => fixedId } as any);
       const srv = createMcpServer();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await srv.connect(t as any);
+      // Bypass SDK init check so stale-session clients work without reinitializing
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wst = (t as any)._webStandardTransport;
+      if (wst) {
+        wst._initialized = true;
+        wst.sessionId = fixedId;
+      }
+      sessions.set(fixedId, t);
+      t.onclose = () => sessions.delete(fixedId);
       transport = t;
     }
 
     await transport.handleRequest(req, res);
-
-    // Store session AFTER handleRequest sets the session ID
-    const sid = (transport as unknown as { sessionId?: string }).sessionId;
-    if (sid && !sessions.has(sid)) {
-      sessions.set(sid, transport);
-      transport.onclose = () => sessions.delete(sid);
-    }
   });
 
   const host = process.env['MCP_HOST'] ?? '127.0.0.1';
