@@ -1,0 +1,35 @@
+use_default_settings: true
+server:
+  limiter: false
+  secret_key: "nightcrawler-searxng-local"
+search:
+  safe_search: 0
+  default_lang: "en"
+  formats:
+    - html
+    - json
+    - csv
+    - rss
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    use_mobile_ui: false
+  - name: bing
+    engine: bing
+    shortcut: b
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: d
+  - name: github
+    engine: github
+    shortcut: gh
+  - name: arxiv
+    engine: arxiv
+    shortcut: ax
+  - name: reddit
+    engine: reddit
+    shortcut: r
+ui:
+  default_theme: simple
+  center_alignment: true

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getLandscape, searchReposTool } from './tools/landscape.js';
 import { research } from './tools/research.js';
 import { getFreshnessStatus, markSource } from './utils/freshness.js';
+import { getTrends, searchX } from './adapters/x.js';
 
 const server = new McpServer({
   name: 'nightcrawler',
@@ -60,27 +61,35 @@ server.tool(
   }
 );
 
-// --- Capa 1: X/Twitter (stub — Fase 3) ---
+// --- Capa 1: X/Twitter (Fase 3 — Playwright) ---
 
 server.tool(
   'get_trends',
-  '[Fase 3 — not implemented] Get trending topics from X/Twitter',
-  { geo: z.string().optional().describe('Geographic region (e.g. "ES", "US")') },
-  async () => {
-    return { content: [{ type: 'text', text: 'X/Twitter integration pending (Fase 3 — requires Playwright auth)' }] };
+  'Get trending topics from X/Twitter. Requires X_USERNAME and X_PASSWORD in environment.',
+  { geo: z.string().optional().describe('Geographic region hint (e.g. "ES", "US") — informational only') },
+  async ({ geo }) => {
+    const result = await getTrends(geo);
+    if (result.length === 0) {
+      return { content: [{ type: 'text', text: 'X/Twitter trends unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
 );
 
 server.tool(
   'search_x',
-  '[Fase 3 — not implemented] Search X/Twitter posts',
+  'Search X/Twitter posts via Playwright. Requires X_USERNAME and X_PASSWORD in environment.',
   {
-    query: z.string(),
-    min_likes: z.number().optional(),
-    lang: z.string().optional(),
+    query: z.string().describe('Search query'),
+    min_likes: z.number().optional().describe('Minimum likes filter'),
+    lang: z.string().optional().describe('Language filter (e.g. "en", "es")'),
   },
-  async () => {
-    return { content: [{ type: 'text', text: 'X/Twitter integration pending (Fase 3 — requires Playwright auth)' }] };
+  async ({ query, min_likes, lang }) => {
+    const result = await searchX(query, min_likes ?? 0, lang);
+    if (result.length === 0) {
+      return { content: [{ type: 'text', text: 'X/Twitter search unavailable. Set X_USERNAME and X_PASSWORD in ~/.secrets to enable.' }] };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
 );
 
