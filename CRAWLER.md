@@ -18,6 +18,7 @@ Arquitectura completa: https://www.notion.so/326337d15dbd8107a6f0de3468cdfe6c
 - `get_landscape(topic)` — GitHub repos + HN + arXiv
 - `search_repos(query)` — búsqueda GitHub rankeada
 - `research(topic, depth)` — informe unificado (quick/deep)
+- `search_web(query, limit?, web_mode?)` — búsqueda web directa (SearXNG/Brave)
 - `get_freshness()` — timestamps por fuente
 - `get_trends(geo?)` — [Fase 3] trends X/Twitter
 - `search_x(query)` — [Fase 3] búsqueda X/Twitter
@@ -31,7 +32,7 @@ npm run dev   # tsx directo, sin compilar
 
 ## Secrets requeridos
 
-En `~/.secrets`:
+En `~/.secrets/*.env`:
 - `GITHUB_TOKEN` — aumenta rate limit GitHub (ya disponible)
 - `BRAVE_API_KEY` — fallback si SearXNG no está activo (ya disponible)
 - `X_USERNAME` / `X_PASSWORD` — NO necesarios. X/Twitter usa session file en `~/.config/nightcrawler/x-session.json`. Para renovar: `node scripts/x-login.mjs`.
