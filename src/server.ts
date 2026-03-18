@@ -142,6 +142,7 @@ async function startHttp(port: number) {
   app.use(mcpAuthRouter({
     provider: authProvider,
     issuerUrl,
+    resourceServerUrl: mcpServerUrl,
     scopesSupported: ['mcp:tools'],
     resourceName: 'nightcrawler',
   }));
