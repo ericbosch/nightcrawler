@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "start:http": "node dist/server.js --http 3333"
   },
   "repository": {
     "type": "git",
@@ -22,11 +23,13 @@
   "homepage": "https://github.com/ericbosch/nightcrawler#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^4.21.2",
     "js-yaml": "^4.1.1",
     "playwright-core": "^1.58.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "^5.0.3",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.0",
     "tsx": "^4.21.0",

@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { getLandscape, searchReposTool } from './tools/landscape.js';
 import { research } from './tools/research.js';
@@ -7,6 +8,7 @@ import { getFreshnessStatus, markSource } from './utils/freshness.js';
 import { getTrends, searchX } from './adapters/x.js';
 import { getSearxngUrl } from './utils/config.js';
 import { execSync } from 'child_process';
+import { createServer } from 'http';
 
 const server = new McpServer({
   name: 'nightcrawler',
@@ -109,10 +111,34 @@ async function ensureSearxng() {
   }
 }
 
+async function startHttp(port: number) {
+  const httpServer = createServer(async (req, res) => {
+    if (req.url !== '/mcp') { res.writeHead(404).end(); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transport = new StreamableHTTPServerTransport({} as any);
+    res.on('close', () => { transport.close().catch(() => {}); });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await server.connect(transport as any);
+    await transport.handleRequest(req, res);
+  });
+  const host = process.env['MCP_HOST'] ?? '127.0.0.1';
+  httpServer.listen(port, host, () => {
+    console.error(`nightcrawler HTTP MCP listening on :${port}/mcp`);
+  });
+}
+
 async function main() {
   await ensureSearxng();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const httpPort = process.argv.includes('--http')
+    ? parseInt(process.argv[process.argv.indexOf('--http') + 1] ?? '3333', 10)
+    : null;
+
+  if (httpPort) {
+    await startHttp(httpPort);
+  } else {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+  }
 }
 
 main().catch(console.error);
