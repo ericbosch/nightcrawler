@@ -10,6 +10,7 @@ import { getLandscape, searchReposTool } from './tools/landscape.js';
 import { research } from './tools/research.js';
 import { getFreshnessStatus, markSource } from './utils/freshness.js';
 import { getTrends, searchX } from './adapters/x.js';
+import { searchWeb } from './adapters/searxng.js';
 import { getSearxngUrl } from './utils/config.js';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -51,10 +52,30 @@ function createMcpServer(): McpServer {
     {
       topic: z.string().describe('Topic to research'),
       depth: z.enum(['quick', 'deep']).default('quick').describe('quick=landscape only, deep=adds web search'),
+      web_mode: z.enum(['official', 'community', 'mixed']).default('official').describe('official=docs/vendor sites, community=forums, mixed=both'),
     },
-    async ({ topic, depth }) => {
-      const result = await research(topic, depth);
-      return { content: [{ type: 'text', text: result.summary }] };
+    async ({ topic, depth, web_mode }) => {
+      const result = await research(topic, depth, web_mode);
+      return {
+        content: [
+          { type: 'text', text: result.summary },
+          { type: 'text', text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    }
+  );
+
+  srv.tool(
+    'search_web',
+    'Search the web via SearXNG (fallback to Brave if configured)',
+    {
+      query: z.string().describe('Search query'),
+      limit: z.number().int().min(1).max(20).default(10).describe('Number of results to return'),
+      web_mode: z.enum(['official', 'community', 'mixed']).default('official').describe('official=docs/vendor sites, community=forums, mixed=both'),
+    },
+    async ({ query, limit, web_mode }) => {
+      const results = await searchWeb(query, limit, web_mode);
+      return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
     }
   );
 

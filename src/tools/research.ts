@@ -3,11 +3,15 @@ import { getLandscape } from './landscape.js';
 import { searchWeb } from '../adapters/searxng.js';
 import { fresh } from '../utils/freshness.js';
 
-export async function research(topic: string, depth: 'quick' | 'deep' = 'quick'): Promise<ResearchReport> {
+export async function research(
+  topic: string,
+  depth: 'quick' | 'deep' = 'quick',
+  web_mode: 'official' | 'community' | 'mixed' = 'official'
+): Promise<ResearchReport> {
   const landscape = await getLandscape(topic);
 
   const web_results = depth === 'deep'
-    ? await searchWeb(topic, 10).catch(() => [])
+    ? await searchWeb(topic, 10, web_mode).catch(() => [])
     : undefined;
 
   const topRepos = landscape.repos.slice(0, 3).map(r => `- ${r.full_name} ⭐${r.stars}: ${r.description ?? ''}`).join('\n');
@@ -27,6 +31,7 @@ export async function research(topic: string, depth: 'quick' | 'deep' = 'quick')
     ...fresh('research'),
     topic,
     depth,
+    web_mode,
     landscape,
     web_results,
     summary,

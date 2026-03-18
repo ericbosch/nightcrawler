@@ -1,6 +1,22 @@
 searxng:
   url: http://localhost:8888
 
+# Optional: bias web research toward official docs/domains
+# web:
+#   allowlist_official:
+#     - wezterm.org
+#     - sw.kovidgoyal.net
+#     - alacritty.org
+#     - github.com
+#     - lwn.net
+#     - phoronix.com
+#     - arstechnica.com
+#   allowlist_community:
+#     - reddit.com
+#   denylist_default:
+#     - youtube.com
+#     - medium.com
+
 # github token opcional — aumenta rate limit (también se lee de GITHUB_TOKEN env)
 # github:
 #   token: ghp_...

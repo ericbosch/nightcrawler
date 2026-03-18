@@ -2,3 +2,6 @@ node_modules/
 dist/
 playwright/.auth/
 *.env
+.index_metadata.json
+code_index.db
+vector_index.qdrant/

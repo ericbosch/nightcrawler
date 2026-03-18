@@ -68,6 +68,7 @@ export interface LandscapeReport extends FreshContext {
 export interface ResearchReport extends FreshContext {
   topic: string;
   depth: 'quick' | 'deep';
+  web_mode?: 'official' | 'community' | 'mixed';
   trends?: Trend[];
   landscape?: LandscapeReport;
   web_results?: SearchResult[] | undefined;
@@ -89,4 +90,11 @@ export interface NightcrawlerConfig {
   searxng?: { url: string };
   x?: { username?: string; password?: string };
   github?: { token?: string };
+  web?: {
+    allowlist?: string[];
+    denylist?: string[];
+    allowlist_official?: string[];
+    allowlist_community?: string[];
+    denylist_default?: string[];
+  };
 }
